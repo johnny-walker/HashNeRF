@@ -201,20 +201,12 @@ def create_nerf(args):
         # if using hashed for xyz, use SH for views
         embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args, i=args.i_embed_views)
     
-    output_ch = 5 if args.N_importance > 0 else 4
-    skips = [4]
-    
-    if args.i_embed==1:
-        model = NeRFSmall(num_layers=2,
-                        hidden_dim=64,
-                        geo_feat_dim=15,
-                        num_layers_color=3,
-                        hidden_dim_color=64,
-                        input_ch=input_ch, input_ch_views=input_ch_views).to(device)
-    else:
-        model = NeRF(D=args.netdepth, W=args.netwidth,
-                 input_ch=input_ch, output_ch=output_ch, skips=skips,
-                 input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs).to(device)
+    model = NeRFSmall(num_layers=2,
+                    hidden_dim=64,
+                    geo_feat_dim=15,
+                    num_layers_color=3,
+                    hidden_dim_color=64,
+                    input_ch=input_ch, input_ch_views=input_ch_views).to(device)
     grad_vars = list(model.parameters())
 
     model_fine = None
@@ -223,17 +215,12 @@ def create_nerf(args):
     #     args.N_importance = 0
 
     if args.N_importance > 0:
-        if args.i_embed==1:
-            model_fine = NeRFSmall(num_layers=2,
-                        hidden_dim=64,
-                        geo_feat_dim=15,
-                        num_layers_color=3,
-                        hidden_dim_color=64,
-                        input_ch=input_ch, input_ch_views=input_ch_views).to(device)
-        else:
-            model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
-                          input_ch=input_ch, output_ch=output_ch, skips=skips,
-                          input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs).to(device)
+        model_fine = NeRFSmall(num_layers=2,
+                    hidden_dim=64,
+                    geo_feat_dim=15,
+                    num_layers_color=3,
+                    hidden_dim_color=64,
+                    input_ch=input_ch, input_ch_views=input_ch_views).to(device)
         grad_vars += list(model_fine.parameters())
 
     network_query_fn = lambda inputs, viewdirs, network_fn : run_network(inputs, viewdirs, network_fn,
@@ -242,16 +229,13 @@ def create_nerf(args):
                                                                 netchunk=args.netchunk)
 
     # Create optimizer
-    if args.i_embed==1:
-        # sparse_opt = torch.optim.SparseAdam(embedding_params, lr=args.lrate, betas=(0.9, 0.99), eps=1e-15)
-        # dense_opt = torch.optim.Adam(grad_vars, lr=args.lrate, betas=(0.9, 0.99), weight_decay=1e-6)
-        # optimizer = MultiOptimizer(optimizers={"sparse_opt": sparse_opt, "dense_opt": dense_opt})
-        optimizer = RAdam([
-                            {'params': grad_vars, 'weight_decay': 1e-6},
-                            {'params': embedding_params, 'eps': 1e-15}
-                        ], lr=args.lrate, betas=(0.9, 0.99))
-    else:
-        optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
+    # sparse_opt = torch.optim.SparseAdam(embedding_params, lr=args.lrate, betas=(0.9, 0.99), eps=1e-15)
+    # dense_opt = torch.optim.Adam(grad_vars, lr=args.lrate, betas=(0.9, 0.99), weight_decay=1e-6)
+    # optimizer = MultiOptimizer(optimizers={"sparse_opt": sparse_opt, "dense_opt": dense_opt})
+    optimizer = RAdam([
+                        {'params': grad_vars, 'weight_decay': 1e-6},
+                        {'params': embedding_params, 'eps': 1e-15}
+                    ], lr=args.lrate, betas=(0.9, 0.99))
 
     start = 0
     basedir = args.basedir
@@ -309,6 +293,97 @@ def create_nerf(args):
 
     return render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer
 
+
+def load_nerf(args):
+    """Instantiate NeRF's MLP model.
+    """
+    input_ch_views = 0
+    embeddirs_fn = None
+    if args.use_viewdirs:
+        # if using hashed for xyz, use SH for views
+        embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args, i=args.i_embed_views)
+    
+    start = 0
+    basedir = args.basedir
+    expname = args.expname
+
+    ##########################
+
+    # Load pths
+    if args.ft_path is not None and args.ft_path!='None':
+        pths = [args.ft_path]
+    else:
+        pths = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'pth' in f]
+
+    model = None
+    model_fine = None
+    embed_fn = None
+    grad_vars = []
+    if len(pths) > 0 and not args.no_reload:
+        for pth in  reversed(pths):
+            if model is None and 'network_fn' in pth:
+                print('Found network_fn pth', pth)
+                model = torch.load(pth)
+                grad_vars += list(model.parameters())
+            if model_fine is None and 'network_fine' in pth:
+                print('Found network_fine pth', pth)
+                model_fine = torch.load(pth)
+                grad_vars += list(model_fine.parameters())
+            if embed_fn is None and 'embed_fn' in pth:
+                print('Found embed_fn pth', pth)
+                embed_fn = torch.load(pth)
+                embedding_params = list(embed_fn.parameters())
+
+    # Create optimizer
+    # sparse_opt = torch.optim.SparseAdam(embedding_params, lr=args.lrate, betas=(0.9, 0.99), eps=1e-15)
+    # dense_opt = torch.optim.Adam(grad_vars, lr=args.lrate, betas=(0.9, 0.99), weight_decay=1e-6)
+    # optimizer = MultiOptimizer(optimizers={"sparse_opt": sparse_opt, "dense_opt": dense_opt})
+    optimizer = RAdam([
+                        {'params': grad_vars, 'weight_decay': 1e-6},
+                        {'params': embedding_params, 'eps': 1e-15}
+                    ], lr=args.lrate, betas=(0.9, 0.99))
+
+    network_query_fn = lambda inputs, viewdirs, network_fn : run_network(inputs, viewdirs, network_fn,
+                                                                embed_fn=embed_fn,
+                                                                embeddirs_fn=embeddirs_fn,
+                                                                netchunk=args.netchunk)
+
+    # Load checkpoints
+    if args.ft_path is not None and args.ft_path!='None':
+        ckpts = [args.ft_path]
+    else:
+        ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
+
+    if len(ckpts) > 0 and not args.no_reload:
+        ckpt_path = ckpts[-1]
+        print('Reloading from', ckpt_path)
+        ckpt = torch.load(ckpt_path)
+
+        start = ckpt['global_step']
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+
+    ##########################
+    render_kwargs_train = {
+        'network_query_fn' : network_query_fn,
+        'perturb' : args.perturb,
+        'N_importance' : args.N_importance,
+        'network_fine' : model_fine,
+        'N_samples' : args.N_samples,
+        'network_fn' : model,
+        'embed_fn': embed_fn,
+        'use_viewdirs' : args.use_viewdirs,
+        'white_bkgd' : args.white_bkgd,
+        'raw_noise_std' : args.raw_noise_std,
+    }
+
+    render_kwargs_train['ndc'] = False
+    render_kwargs_train['lindisp'] = args.lindisp
+
+    render_kwargs_test = {k : render_kwargs_train[k] for k in render_kwargs_train}
+    render_kwargs_test['perturb'] = False
+    render_kwargs_test['raw_noise_std'] = 0.
+
+    return render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer
 
 def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=False):
     """Transforms model's predictions to semantically meaningful values.
@@ -577,15 +652,15 @@ def config_parser():
                         help='will take every 1/N images as LLFF test set, paper uses 8')
 
     # logging/saving options
-    parser.add_argument("--i_print",   type=int, default=100, 
+    parser.add_argument("--i_print",   type=int, default=0, 
                         help='frequency of console printout and metric loggin')
     parser.add_argument("--i_img",     type=int, default=500, 
                         help='frequency of tensorboard image logging')
     parser.add_argument("--i_weights", type=int, default=10000, 
                         help='frequency of weight ckpt saving')
-    parser.add_argument("--i_testset", type=int, default=30000, 
+    parser.add_argument("--i_testset", type=int, default=500, 
                         help='frequency of testset saving')
-    parser.add_argument("--i_video",   type=int, default=30000, 
+    parser.add_argument("--i_video",   type=int, default=500, 
                         help='frequency of render_poses video saving')
 
     parser.add_argument("--finest_res",   type=int, default=512, 
@@ -601,43 +676,14 @@ def config_parser():
 
 
 def train():
-    Total_iters = 20100
+    Total_iters = 50000
 
     parser = config_parser()
     args = parser.parse_args()
     # Load data
     K = None
-    if args.dataset_type == 'llff':
-        images, poses, bds, render_poses, i_test, bounding_box = load_llff_data(args.datadir, args.factor,
-                                                                  recenter=True, bd_factor=.75,
-                                                                  spherify=args.spherify)
-        hwf = poses[0,:3,-1]
-        poses = poses[:,:3,:4]
-        args.bounding_box = bounding_box
-        print('Loaded llff', images.shape, render_poses.shape, hwf, args.datadir)
 
-        if not isinstance(i_test, list):
-            i_test = [i_test]
-
-        if args.llffhold > 0:
-            print('Auto LLFF holdout,', args.llffhold)
-            i_test = np.arange(images.shape[0])[::args.llffhold]
-
-        i_val = i_test
-        i_train = np.array([i for i in np.arange(int(images.shape[0])) if
-                        (i not in i_test and i not in i_val)])
-
-        print('DEFINING BOUNDS')
-        if args.no_ndc:
-            near = np.ndarray.min(bds) * .9
-            far = np.ndarray.max(bds) * 1.
-            
-        else:
-            near = 0.
-            far = 1.
-        print('NEAR FAR', near, far)
-
-    elif args.dataset_type == 'blender':
+    if args.dataset_type == 'blender':
         images, poses, render_poses, hwf, i_split, bounding_box = load_blender_data(args.datadir, args.half_res, args.testskip)
         args.bounding_box = bounding_box
         print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
@@ -650,31 +696,6 @@ def train():
             images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
         else:
             images = images[...,:3]
-
-    elif args.dataset_type == 'LINEMOD':
-        images, poses, render_poses, hwf, K, i_split, near, far = load_LINEMOD_data(args.datadir, args.half_res, args.testskip)
-        print(f'Loaded LINEMOD, images shape: {images.shape}, hwf: {hwf}, K: {K}')
-        print(f'[CHECK HERE] near: {near}, far: {far}.')
-        i_train, i_val, i_test = i_split
-
-        if args.white_bkgd:
-            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        else:
-            images = images[...,:3]
-
-    elif args.dataset_type == 'deepvoxels':
-
-        images, poses, render_poses, hwf, i_split = load_dv_data(scene=args.shape,
-                                                                 basedir=args.datadir,
-                                                                 testskip=args.testskip)
-
-        print('Loaded deepvoxels', images.shape, render_poses.shape, hwf, args.datadir)
-        i_train, i_val, i_test = i_split
-
-        hemi_R = np.mean(np.linalg.norm(poses[:,:3,-1], axis=-1))
-        near = hemi_R-1.
-        far = hemi_R+1.
-
     else:
         print('Unknown dataset type', args.dataset_type, 'exiting')
         return
@@ -725,7 +746,8 @@ def train():
             file.write(open(args.config, 'r').read())
 
     # Create nerf model
-    render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
+    #render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
+    render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = load_nerf(args)
     global_step = start
 
     bds_dict = {
@@ -942,7 +964,7 @@ def train():
 
 
     
-        if i%args.i_print==0:
+        if args.i_print > 0 and i%args.i_print==0:
             tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
             loss_list.append(loss.item())
             psnr_list.append(psnr.item())
@@ -958,12 +980,19 @@ def train():
         global_step += 1
     
     # save models
-    path = os.path.join(basedir, expname, '{:s}_{:06d}.pth'.format('network_fn', Total_iters))
+    path = os.path.join(basedir, expname, '{:06d}_{:s}.pth'.format(Total_iters, 'network_fn'))
     torch.save(render_kwargs_train['network_fn'], path)
-    path = os.path.join(basedir, expname, '{:s}_{:06d}.pth'.format('network_fine', Total_iters))
+    path = os.path.join(basedir, expname, '{:06d}_{:s}.pth'.format(Total_iters, 'network_fine'))
     torch.save(render_kwargs_train['network_fine'], path)
-    path = os.path.join(basedir, expname, '{:s}_{:06d}.pth'.format('embed_fn', Total_iters))
+    path = os.path.join(basedir, expname, '{:06d}_{:s}.pth'.format(Total_iters, 'embed_fn'))
     torch.save(render_kwargs_train['embed_fn'], path)
+    
+    # save checkpoints
+    path = os.path.join(basedir, expname, '{:06d}.tar'.format(Total_iters))
+    torch.save({
+                    'global_step': global_step,
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }, path)
 
 if __name__=='__main__':
     torch.set_default_tensor_type('torch.cuda.FloatTensor')

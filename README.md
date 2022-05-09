@@ -20,7 +20,7 @@ To train a `lego` HashNeRF model:
 python run_nerf.py --config configs/lego.txt --finest_res 512 --log2_hashmap_size 19 --lrate 0.01 --lrate_decay 10
 ```
 
-To train for other objects like `ficus`/`hotdog`, replace `configs/chair.txt` with `configs/{object}.txt`:
+To train for other objects like `ficus`/`hotdog`, replace `configs/lego.txt` with `configs/{object}.txt`:
 
 ![hotdog_ficus](https://user-images.githubusercontent.com/8559512/154066554-d3656d4a-1738-427c-982d-3ef4e4071969.gif)
 

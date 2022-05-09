@@ -72,6 +72,16 @@ def get_embedder(multires, args, i=0):
         out_dim = embed.out_dim
     return embed, out_dim
 
+def load_embedder(multires, args, i=1):
+    if i==1:
+        embed = HashEmbedder(bounding_box=args.bounding_box, \
+                                log2_hashmap_size=args.log2_hashmap_size, \
+                                finest_resolution=args.finest_res)
+        out_dim = embed.out_dim
+    elif i==2:
+        embed = SHEncoder()
+        out_dim = embed.out_dim
+    return embed, out_dim
 
 # Model
 class NeRF(nn.Module):
