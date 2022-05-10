@@ -16,14 +16,11 @@ import pickle
 import matplotlib.pyplot as plt
 
 from run_nerf_helpers import *
-from optimizer import MultiOptimizer
 from radam import RAdam
 from loss import sigma_sparsity_loss, total_variation_loss
 
-from load_llff import load_llff_data
-from load_deepvoxels import load_dv_data
 from load_blender import load_blender_data
-from load_LINEMOD import load_LINEMOD_data
+
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -229,9 +226,6 @@ def create_nerf(args):
                                                                 netchunk=args.netchunk)
 
     # Create optimizer
-    # sparse_opt = torch.optim.SparseAdam(embedding_params, lr=args.lrate, betas=(0.9, 0.99), eps=1e-15)
-    # dense_opt = torch.optim.Adam(grad_vars, lr=args.lrate, betas=(0.9, 0.99), weight_decay=1e-6)
-    # optimizer = MultiOptimizer(optimizers={"sparse_opt": sparse_opt, "dense_opt": dense_opt})
     optimizer = RAdam([
                         {'params': grad_vars, 'weight_decay': 1e-6},
                         {'params': embedding_params, 'eps': 1e-15}
@@ -654,29 +648,29 @@ def config_parser():
     # logging/saving options
     parser.add_argument("--i_print",   type=int, default=0, 
                         help='frequency of console printout and metric loggin')
-    parser.add_argument("--i_img",     type=int, default=500, 
-                        help='frequency of tensorboard image logging')
+    #parser.add_argument("--i_img",     type=int, default=500, 
+    #                    help='frequency of tensorboard image logging')
     parser.add_argument("--i_weights", type=int, default=10000, 
                         help='frequency of weight ckpt saving')
-    parser.add_argument("--i_testset", type=int, default=500, 
+    parser.add_argument("--i_testset", type=int, default=5000, 
                         help='frequency of testset saving')
-    parser.add_argument("--i_video",   type=int, default=500, 
+    parser.add_argument("--i_video",   type=int, default=5000, 
                         help='frequency of render_poses video saving')
 
     parser.add_argument("--finest_res",   type=int, default=512, 
                         help='finest resolultion for hashed embedding')
     parser.add_argument("--log2_hashmap_size",   type=int, default=19, 
                         help='log2 of hashmap size')
-    parser.add_argument("--sparse-loss-weight", type=float, default=1e-10,
+    parser.add_argument("--sparse_loss_weight", type=float, default=1e-10,
                         help='learning rate')
-    parser.add_argument("--tv-loss-weight", type=float, default=1e-6,
+    parser.add_argument("--tv_loss_weight", type=float, default=1e-6,
                         help='learning rate')
  
     return parser
 
 
 def train():
-    Total_iters = 50000
+    Total_iters = 50100
 
     parser = config_parser()
     args = parser.parse_args()
