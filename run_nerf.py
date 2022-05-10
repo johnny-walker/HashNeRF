@@ -17,11 +17,8 @@ import matplotlib.pyplot as plt
 
 from run_nerf_helpers import *
 from radam import RAdam
-from loss import sigma_sparsity_loss, total_variation_loss
-
+from loss import total_variation_loss
 from load_blender import load_blender_data
-
-
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device} device")
@@ -183,14 +180,10 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
     return rgbs, disps
 
-
 def create_nerf(args):
-    """Instantiate NeRF's MLP model.
-    """
+    print("Create NeRF's MLP model.")
     embed_fn, input_ch = get_embedder(args.multires, args, i=args.i_embed)
-    if args.i_embed==1:
-        # hashed embedding table
-        embedding_params = list(embed_fn.parameters())
+    embedding_params = list(embed_fn.parameters())
 
     input_ch_views = 0
     embeddirs_fn = None
@@ -207,9 +200,6 @@ def create_nerf(args):
     grad_vars = list(model.parameters())
 
     model_fine = None
-
-    # if args.i_embed==1:
-    #     args.N_importance = 0
 
     if args.N_importance > 0:
         model_fine = NeRFSmall(num_layers=2,
@@ -276,11 +266,7 @@ def create_nerf(args):
     }
 
     # NDC only good for LLFF-style forward facing data
-    if args.dataset_type != 'llff' or args.no_ndc:
-        print('Not ndc!')
-        render_kwargs_train['ndc'] = False
-        render_kwargs_train['lindisp'] = args.lindisp
-
+    render_kwargs_train['ndc'] = False
     render_kwargs_test = {k : render_kwargs_train[k] for k in render_kwargs_train}
     render_kwargs_test['perturb'] = False
     render_kwargs_test['raw_noise_std'] = 0.
@@ -289,8 +275,7 @@ def create_nerf(args):
 
 
 def load_nerf(args):
-    """Instantiate NeRF's MLP model.
-    """
+    print("Load NeRF's MLP model.")
     input_ch_views = 0
     embeddirs_fn = None
     if args.use_viewdirs:
@@ -327,11 +312,9 @@ def load_nerf(args):
                 print('Found embed_fn pth', pth)
                 embed_fn = torch.load(pth)
                 embedding_params = list(embed_fn.parameters())
+    else:
+        return None, None, None, None, None
 
-    # Create optimizer
-    # sparse_opt = torch.optim.SparseAdam(embedding_params, lr=args.lrate, betas=(0.9, 0.99), eps=1e-15)
-    # dense_opt = torch.optim.Adam(grad_vars, lr=args.lrate, betas=(0.9, 0.99), weight_decay=1e-6)
-    # optimizer = MultiOptimizer(optimizers={"sparse_opt": sparse_opt, "dense_opt": dense_opt})
     optimizer = RAdam([
                         {'params': grad_vars, 'weight_decay': 1e-6},
                         {'params': embedding_params, 'eps': 1e-15}
@@ -371,8 +354,6 @@ def load_nerf(args):
     }
 
     render_kwargs_train['ndc'] = False
-    render_kwargs_train['lindisp'] = args.lindisp
-
     render_kwargs_test = {k : render_kwargs_train[k] for k in render_kwargs_train}
     render_kwargs_test['perturb'] = False
     render_kwargs_test['raw_noise_std'] = 0.
@@ -410,7 +391,6 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=F
             noise = np.random.rand(*list(raw[...,3].shape)) * raw_noise_std
             noise = torch.Tensor(noise)
 
-    # sigma_loss = sigma_sparsity_loss(raw[...,3])
     alpha = raw2alpha(raw[...,3] + noise, dists)  # [N_rays, N_samples]
     # weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
     weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1.-alpha + 1e-10], -1), -1)[:, :-1]
@@ -623,33 +603,15 @@ def config_parser():
     parser.add_argument("--testskip", type=int, default=8, 
                         help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
 
-    ## deepvoxels flags
-    parser.add_argument("--shape", type=str, default='greek', 
-                        help='options : armchair / cube / greek / vase')
-
     ## blender flags
     parser.add_argument("--white_bkgd", action='store_true', 
                         help='set to render synthetic data on a white bkgd (always use for dvoxels)')
     parser.add_argument("--half_res", action='store_true', 
                         help='load blender synthetic data at 400x400 instead of 800x800')
 
-    ## llff flags
-    parser.add_argument("--factor", type=int, default=8, 
-                        help='downsample factor for LLFF images')
-    parser.add_argument("--no_ndc", action='store_true', 
-                        help='do not use normalized device coordinates (set for non-forward facing scenes)')
-    parser.add_argument("--lindisp", action='store_true', 
-                        help='sampling linearly in disparity rather than depth')
-    parser.add_argument("--spherify", action='store_true', 
-                        help='set for spherical 360 scenes')
-    parser.add_argument("--llffhold", type=int, default=8, 
-                        help='will take every 1/N images as LLFF test set, paper uses 8')
-
     # logging/saving options
     parser.add_argument("--i_print",   type=int, default=0, 
                         help='frequency of console printout and metric loggin')
-    #parser.add_argument("--i_img",     type=int, default=500, 
-    #                    help='frequency of tensorboard image logging')
     parser.add_argument("--i_weights", type=int, default=10000, 
                         help='frequency of weight ckpt saving')
     parser.add_argument("--i_testset", type=int, default=5000, 
@@ -670,7 +632,7 @@ def config_parser():
 
 
 def train():
-    Total_iters = 50100
+    Total_iters = 50010
 
     parser = config_parser()
     args = parser.parse_args()
@@ -740,8 +702,10 @@ def train():
             file.write(open(args.config, 'r').read())
 
     # Create nerf model
-    #render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
     render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = load_nerf(args)
+    if render_kwargs_train is None:
+        render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
+
     global_step = start
 
     bds_dict = {
